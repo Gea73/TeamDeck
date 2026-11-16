@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = createApiApp();
-  const port = Number(process.env.PORT) || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -27,8 +27,8 @@ async function startServer() {
     });
   }
 
-  const server: http.Server = app.listen(port, '0.0.0.0', () => {
-    console.log(`TeamDeck server running on http://0.0.0.0:${port}`);
+  const server: http.Server = app.listen(PORT,() => {
+    console.log(`TeamDeck server running on ${PORT}`);
   });
 
   const shutdown = (signal: string) => {
