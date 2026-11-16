@@ -1,22 +1,34 @@
-import { BookOpen, Building2, FolderKanban, GraduationCap, Mail } from 'lucide-react';
-import { Project, TeamMember, UserProfile } from '../types';
+import {
+  BookOpen,
+  Building2,
+  FolderKanban,
+  GraduationCap,
+  Mail,
+} from 'lucide-react';
+import {
+  Project,
+  TeamMemberAssignmentView,
+  UserProfile,
+} from '../types';
 import { getInitials } from '../utils/formatters';
 import { Card, CardHeader } from '../components/ui/Card';
 
 interface ProfileViewProps {
   userProfile: UserProfile;
   projects: Project[];
-  members: TeamMember[];
+  assignments: TeamMemberAssignmentView[];
   onOpenProject: (projectId: string) => void;
 }
 
 export function ProfileView({
   userProfile,
   projects,
-  members,
+  assignments,
   onOpenProject,
 }: ProfileViewProps) {
-  const userAssignments = members.filter((m) => m.email === userProfile.email);
+  const userAssignments = assignments.filter(
+    (m) => m.email.toLowerCase() === userProfile.email.toLowerCase()
+  );
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -39,11 +51,17 @@ export function ProfileView({
                 {userProfile.email}
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <GraduationCap className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                <GraduationCap
+                  className="w-4 h-4 text-slate-400"
+                  aria-hidden="true"
+                />
                 {userProfile.course}
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <Building2 className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                <Building2
+                  className="w-4 h-4 text-slate-400"
+                  aria-hidden="true"
+                />
                 {userProfile.institution}
               </span>
             </div>
@@ -60,7 +78,7 @@ export function ProfileView({
           <div>
             <p className="text-xs text-slate-500">Projetos acompanhados</p>
             <p className="mt-1 font-semibold text-slate-900 tabular-nums">
-              {projects.length} projetos
+              {projects.length} projeto(s)
             </p>
           </div>
           <div>
@@ -80,33 +98,42 @@ export function ProfileView({
           />
         </div>
 
-        <div className="divide-y divide-slate-200">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-            >
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2 text-xs text-blue-700 font-medium">
-                  <BookOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  <span>{project.discipline}</span>
-                </div>
-                <p className="text-sm font-semibold text-slate-900">
-                  {project.title}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onOpenProject(project.id)}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap shrink-0"
+        {userAssignments.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">
+            Você ainda não possui associações registradas nos projetos atuais.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-200">
+            {userAssignments.map((assoc) => (
+              <div
+                key={assoc.associationId}
+                className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
               >
-                <FolderKanban className="w-4 h-4" aria-hidden="true" />
-                <span>Ver projeto</span>
-              </button>
-            </div>
-          ))}
-        </div>
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-blue-700 font-medium">
+                    <BookOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      {assoc.role} · {assoc.presentationMinutes} min
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {assoc.projectName}
+                  </p>
+                  <p className="text-xs text-slate-500">{assoc.responsibility}</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onOpenProject(assoc.projectId)}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap shrink-0"
+                >
+                  <FolderKanban className="w-4 h-4" aria-hidden="true" />
+                  <span>Ver projeto</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

@@ -2,5 +2,5 @@
   "name": "TeamDeck",
   "description": "Plataforma acadêmica para organização de apresentações em grupo, divisão de conteúdo, ensaios e acompanhamento de progresso.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

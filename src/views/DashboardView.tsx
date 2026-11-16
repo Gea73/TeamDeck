@@ -6,11 +6,11 @@ import {
   Users,
 } from 'lucide-react';
 import {
+  MemberDirectoryItem,
   NavigationRoute,
   Project,
   ProjectStatus,
   RehearsalSession,
-  TeamMember,
 } from '../types';
 import { formatDatePtBr } from '../utils/formatters';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -20,7 +20,7 @@ import { StatusIndicator } from '../components/ui/StatusIndicator';
 
 interface DashboardViewProps {
   projects: Project[];
-  members: TeamMember[];
+  members: MemberDirectoryItem[];
   rehearsals: RehearsalSession[];
   onOpenProject: (projectId: string) => void;
   onNavigate: (route: NavigationRoute) => void;
@@ -36,8 +36,6 @@ export function DashboardView({
   const activeProjects = projects.filter(
     (project) => project.status !== ProjectStatus.COMPLETED
   );
-
-  const uniqueMemberCount = new Set(members.map((m) => m.email)).size;
 
   const upcomingPresentations = [...activeProjects].sort((a, b) =>
     a.presentationDate.localeCompare(b.presentationDate)
@@ -55,19 +53,18 @@ export function DashboardView({
 
   return (
     <div className="space-y-6">
-      {/* Resumo de métricas principais */}
       <section aria-label="Indicadores principais">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
           <MetricCard
             label="Projetos ativos"
             value={activeProjects.length}
-            helperText={`${projects.length} projetos cadastrados no semestre`}
+            helperText={`${projects.length} projeto(s) cadastrado(s)`}
             icon={<FolderKanban className="w-5 h-5" />}
           />
           <MetricCard
             label="Integrantes"
-            value={uniqueMemberCount}
-            helperText={`Distribuídos em ${activeProjects.length} equipes ativas`}
+            value={members.length}
+            helperText={`Atuando em ${activeProjects.length} equipe(s) ativa(s)`}
             icon={<Users className="w-5 h-5" />}
           />
           <MetricCard
@@ -90,9 +87,7 @@ export function DashboardView({
         </div>
       </section>
 
-      {/* Conteúdo principal em duas colunas */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        {/* Lista dos projetos recentes */}
         <Card padding="none" className="xl:col-span-2 overflow-hidden">
           <div className="p-5 sm:p-6 border-b border-slate-200">
             <CardHeader
@@ -111,54 +106,59 @@ export function DashboardView({
             />
           </div>
 
-          <div className="divide-y divide-slate-200">
-            {projects.slice(0, 4).map((project) => (
-              <div
-                key={project.id}
-                className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors"
-              >
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <button
-                      type="button"
-                      onClick={() => onOpenProject(project.id)}
-                      className="text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors"
-                    >
-                      {project.title}
-                    </button>
+          {projects.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              Nenhum projeto cadastrado ainda. Crie seu primeiro projeto em &ldquo;Meus projetos&rdquo;.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {projects.slice(0, 5).map((project) => (
+                <div
+                  key={project.id}
+                  className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/80 transition-colors"
+                >
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <button
+                        type="button"
+                        onClick={() => onOpenProject(project.id)}
+                        className="text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors"
+                      >
+                        {project.title}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
+                      <span>{project.discipline}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="tabular-nums">
+                        Apresentação: {formatDatePtBr(project.presentationDate)}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="tabular-nums">
+                        {project.memberCount} integrante(s)
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
-                    <span>{project.discipline}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">
-                      Apresentação: {formatDatePtBr(project.presentationDate)}
-                    </span>
-                    <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">
-                      {project.memberCount} integrantes
-                    </span>
+                  <div className="flex items-center justify-between sm:justify-end gap-5 shrink-0">
+                    <div className="w-28 sm:w-32">
+                      <ProgressBar
+                        value={project.overallProgress}
+                        size="sm"
+                        showLabel
+                      />
+                    </div>
+                    <div className="w-28 flex justify-end">
+                      <StatusIndicator status={project.status} />
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between sm:justify-end gap-5 shrink-0">
-                  <div className="w-28 sm:w-32">
-                    <ProgressBar
-                      value={project.overallProgress}
-                      size="sm"
-                      showLabel
-                    />
-                  </div>
-                  <div className="w-28 flex justify-end">
-                    <StatusIndicator status={project.status} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
 
-        {/* Coluna lateral: Próximas apresentações e Progresso por equipe */}
         <div className="space-y-6">
           <Card padding="none" className="overflow-hidden">
             <div className="p-5 sm:p-6 border-b border-slate-200">
@@ -177,37 +177,43 @@ export function DashboardView({
               />
             </div>
 
-            <div className="divide-y divide-slate-200">
-              {upcomingPresentations.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => onOpenProject(project.id)}
-                  className="w-full text-left px-5 sm:px-6 py-4 hover:bg-slate-50 transition-colors flex items-start gap-4"
-                >
-                  <div className="w-12 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-center shrink-0">
-                    <span className="block text-[11px] font-medium text-blue-700 uppercase tabular-nums">
-                      {new Date(`${project.presentationDate}T12:00:00`).toLocaleDateString(
-                        'pt-BR',
-                        { month: 'short' }
-                      )}
-                    </span>
-                    <span className="block text-base font-bold text-blue-900 tabular-nums leading-tight">
-                      {project.presentationDate.split('-')[2]}
-                    </span>
-                  </div>
+            {upcomingPresentations.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                Nenhuma apresentação pendente.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {upcomingPresentations.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => onOpenProject(project.id)}
+                    className="w-full text-left px-5 sm:px-6 py-4 hover:bg-slate-50 transition-colors flex items-start gap-4"
+                  >
+                    <div className="w-12 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-center shrink-0">
+                      <span className="block text-[11px] font-medium text-blue-700 uppercase tabular-nums">
+                        {new Date(`${project.presentationDate}T12:00:00`).toLocaleDateString(
+                          'pt-BR',
+                          { month: 'short' }
+                        )}
+                      </span>
+                      <span className="block text-base font-bold text-blue-900 tabular-nums leading-tight">
+                        {project.presentationDate.split('-')[2]}
+                      </span>
+                    </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900 truncate">
-                      {project.title}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500 truncate">
-                      {project.presentationTime} · {project.location}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {project.title}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 truncate">
+                        {project.presentationTime} · {project.location}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card padding="md">
@@ -216,25 +222,31 @@ export function DashboardView({
               subtitle="Preparação consolidada por grupo"
               className="mb-4"
             />
-            <div className="space-y-4">
-              {activeProjects.map((project) => (
-                <div key={project.id} className="space-y-1">
-                  <ProgressBar
-                    value={project.overallProgress}
-                    labelText={project.title}
-                    size="sm"
-                  />
-                  <p className="text-xs text-slate-500 tabular-nums">
-                    {project.memberCount} integrantes ·{' '}
-                    {
-                      rehearsals.filter((r) => r.projectId === project.id)
-                        .length
-                    }{' '}
-                    ensaio(s) registrado(s)
-                  </p>
-                </div>
-              ))}
-            </div>
+            {activeProjects.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Nenhum projeto ativo para exibir progresso.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {activeProjects.map((project) => (
+                  <div key={project.id} className="space-y-1">
+                    <ProgressBar
+                      value={project.overallProgress}
+                      labelText={project.title}
+                      size="sm"
+                    />
+                    <p className="text-xs text-slate-500 tabular-nums">
+                      {project.memberCount} integrante(s) ·{' '}
+                      {
+                        rehearsals.filter((r) => r.projectId === project.id)
+                          .length
+                      }{' '}
+                      ensaio(s) registrado(s)
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>

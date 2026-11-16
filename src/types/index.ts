@@ -1,3 +1,7 @@
+import { PdfStructuredAnalysis } from './pdfAnalysis';
+import { MemberPreparationMaterial } from './preparation';
+import { EmailDispatchLog, RehearsalReminderConfig } from './workspace';
+
 export type NavigationRoute =
   | 'dashboard'
   | 'projects'
@@ -13,6 +17,8 @@ export type ProjectDetailTab =
   | 'pdf'
   | 'content'
   | 'presentation'
+  | 'preparation'
+  | 'communication'
   | 'rehearsals'
   | 'progress';
 
@@ -35,20 +41,6 @@ export enum ContentSectionStatus {
   READY = 'Revisado',
 }
 
-export interface TeamMember {
-  id: string;
-  projectId: string;
-  projectName: string;
-  name: string;
-  email: string;
-  role: string;
-  responsibility: string;
-  presentationMinutes: number;
-  progress: number;
-  tasksCompleted: number;
-  tasksTotal: number;
-}
-
 export interface PdfDocument {
   id: string;
   fileName: string;
@@ -58,6 +50,7 @@ export interface PdfDocument {
   uploadedBy: string;
   summary: string;
   extractedTopics: string[];
+  analysis?: PdfStructuredAnalysis | null;
 }
 
 export interface ContentDivisionItem {
@@ -80,23 +73,30 @@ export interface PresentationSlide {
   speakerNotes: string;
   assignedMemberName: string;
   durationMinutes: number;
+  durationSeconds?: number;
+  layoutType?:
+    | 'cover'
+    | 'section_standard'
+    | 'section_visual_split'
+    | 'section_two_column'
+    | 'conclusion';
+  sourcePages?: number[];
+  visualCallouts?: string[];
 }
 
-export interface RehearsalSession {
-  id: string;
-  projectId: string;
-  projectName: string;
+export interface GooglePresentationMetadata {
+  presentationId: string;
+  presentationUrl: string;
   title: string;
-  date: string;
-  time: string;
-  location: string;
-  modality: 'Presencial' | 'Online';
-  durationMinutes: number;
-  status: RehearsalStatus;
-  notes: string;
+  slideCount: number;
+  approvedSectionIds: string[];
+  generatedAt: string;
 }
 
-export interface Project {
+/**
+ * Entidade relacional: tabela `projects`
+ */
+export interface ProjectEntity {
   id: string;
   title: string;
   description: string;
@@ -107,12 +107,100 @@ export interface Project {
   presentationTime: string;
   location: string;
   targetDurationMinutes: number;
-  memberCount: number;
   status: ProjectStatus;
-  overallProgress: number;
+  baseProgress: number;
   pdfDocument: PdfDocument | null;
   contentDivision: ContentDivisionItem[];
+  sectionAssignments?: Record<string, string>;
   slides: PresentationSlide[];
+  googlePresentation?: GooglePresentationMetadata | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Entidade relacional: tabela `members`
+ */
+export interface MemberEntity {
+  id: string;
+  name: string;
+  email: string;
+  defaultRole: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Entidade associativa: tabela `project_members`
+ */
+export interface ProjectMemberAssociation {
+  id: string;
+  projectId: string;
+  memberId: string;
+  role: string;
+  responsibility: string;
+  presentationMinutes: number;
+  progress: number;
+  tasksCompleted: number;
+  tasksTotal: number;
+  assignedAt: string;
+}
+
+/**
+ * Modelo agregado de leitura para visualização de projetos
+ */
+export interface Project extends ProjectEntity {
+  memberCount: number;
+  overallProgress: number;
+}
+
+/**
+ * Modelo agregado de leitura para integrante vinculado a um projeto
+ */
+export interface TeamMemberAssignmentView {
+  associationId: string;
+  memberId: string;
+  projectId: string;
+  projectName: string;
+  name: string;
+  email: string;
+  role: string;
+  responsibility: string;
+  presentationMinutes: number;
+  progress: number;
+  tasksCompleted: number;
+  tasksTotal: number;
+}
+
+/**
+ * Modelo agregado de leitura para diretório de integrantes (com todos os projetos associados)
+ */
+export interface MemberDirectoryItem extends MemberEntity {
+  assignments: TeamMemberAssignmentView[];
+  totalPresentationMinutes: number;
+  averageProgress: number;
+}
+
+export interface RehearsalSession {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  description?: string;
+  date: string;
+  time: string;
+  location: string;
+  modality: 'Presencial' | 'Online';
+  durationMinutes: number;
+  status: RehearsalStatus;
+  notes: string;
+  attendeeEmails?: string[];
+  meetingLink?: string;
+  reminders?: RehearsalReminderConfig[];
+  googleCalendarEventId?: string | null;
+  googleCalendarHtmlLink?: string | null;
+  googleMeetLink?: string | null;
+  syncedAt?: string | null;
 }
 
 export interface CalendarEvent {
@@ -146,11 +234,66 @@ export interface UserSettings {
   academicPeriod: string;
 }
 
-export interface CreateProjectPayload {
+export interface CreateProjectInput {
   title: string;
   description: string;
+  discipline: string;
+  advisor: string;
   presentationDate: string;
-  memberCount: number;
+  presentationTime: string;
+  location: string;
+  targetDurationMinutes: number;
   status: ProjectStatus;
-  discipline?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: string;
+}
+
+export interface CreateMemberInput {
+  name: string;
+  email: string;
+  defaultRole: string;
+}
+
+export interface UpdateMemberInput extends CreateMemberInput {
+  id: string;
+}
+
+export interface AssociateMemberInput {
+  projectId: string;
+  memberId: string;
+  role: string;
+  responsibility: string;
+  presentationMinutes: number;
+  progress: number;
+}
+
+export interface UpdateAssociationInput {
+  associationId: string;
+  role: string;
+  responsibility: string;
+  presentationMinutes: number;
+  progress: number;
+}
+
+export interface ValidationErrors {
+  [field: string]: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationErrors;
+}
+
+export interface WorkspaceSnapshot {
+  projects: Project[];
+  members: MemberDirectoryItem[];
+  assignments: TeamMemberAssignmentView[];
+  rehearsals: RehearsalSession[];
+  calendarEvents: CalendarEvent[];
+  preparations: MemberPreparationMaterial[];
+  emailLogs: EmailDispatchLog[];
+  userProfile: UserProfile;
+  userSettings: UserSettings;
 }

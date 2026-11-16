@@ -1,24 +1,44 @@
-import React, { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { UserSettings } from '../types';
 import { Card, CardHeader } from '../components/ui/Card';
+import { GoogleAccountBar } from '../components/ui/GoogleAccountBar';
 
 interface SettingsViewProps {
   initialSettings: UserSettings;
+  isMutating: boolean;
+  onSaveSettings: (settings: UserSettings) => Promise<void>;
 }
 
-export function SettingsView({ initialSettings }: SettingsViewProps) {
+export function SettingsView({
+  initialSettings,
+  isMutating,
+  onSaveSettings,
+}: SettingsViewProps) {
   const [settings, setSettings] = useState<UserSettings>(initialSettings);
   const [savedNotice, setSavedNotice] = useState(false);
 
-  const handleSave = (event: React.FormEvent) => {
+  useEffect(() => {
+    setSettings(initialSettings);
+  }, [initialSettings]);
+
+  const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
+    await onSaveSettings(settings);
     setSavedNotice(true);
     window.setTimeout(() => setSavedNotice(false), 3000);
   };
 
   return (
     <div className="max-w-3xl space-y-6">
+      <Card padding="md" className="space-y-4">
+        <CardHeader
+          title="Integração Google (OAuth 2.0)"
+          subtitle="Gerencie a conexão autorizada para Google Slides, envio de e-mails no Gmail e criação de ensaios no Google Calendar"
+        />
+        <GoogleAccountBar purposeLabel="integrar Google Slides, Gmail e Google Calendar" />
+      </Card>
+
       <Card padding="md">
         <CardHeader
           title="Preferências da plataforma"
@@ -26,7 +46,7 @@ export function SettingsView({ initialSettings }: SettingsViewProps) {
           className="mb-6"
         />
 
-        <form onSubmit={handleSave} className="space-y-6">
+        <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
           <div className="divide-y divide-slate-200">
             <label className="py-4 first:pt-0 flex items-center justify-between gap-4 cursor-pointer">
               <div>
@@ -146,16 +166,20 @@ export function SettingsView({ initialSettings }: SettingsViewProps) {
               {savedNotice && (
                 <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700">
                   <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                  Preferências atualizadas na visualização atual.
+                  Preferências salvas com sucesso.
                 </span>
               )}
             </div>
 
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={isMutating}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              Salvar preferências
+              {isMutating && (
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              )}
+              <span>Salvar preferências</span>
             </button>
           </div>
         </form>

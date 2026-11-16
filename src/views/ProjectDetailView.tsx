@@ -1,37 +1,123 @@
 import { useState } from 'react';
 import {
   ArrowLeft,
+  Bell,
   BookOpen,
   Calendar,
+  CalendarClock,
+  CalendarPlus,
   CheckCircle2,
   Clock,
-  FileText,
+  ExternalLink,
   ListChecks,
+  Mail,
   MapPin,
-  Presentation,
-  Upload,
+  Pencil,
+  Trash2,
   UserCheck,
+  UserMinus,
+  UserPlus,
+  Video,
 } from 'lucide-react';
+import { sanitizeExternalHttpUrl } from '../domain/validators';
 import {
+  AssociateMemberInput,
+  CreateProjectInput,
+  MemberDirectoryItem,
   Project,
   ProjectDetailTab,
   RehearsalSession,
-  TeamMember,
+  TeamMemberAssignmentView,
+  UpdateAssociationInput,
 } from '../types';
 import {
   formatDatePtBr,
   formatLongDatePtBr,
   getInitials,
 } from '../utils/formatters';
+import { AssociateMemberModal } from '../components/ui/AssociateMemberModal';
 import { Card, CardHeader } from '../components/ui/Card';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
+import { PresentationDateModal } from '../components/ui/PresentationDateModal';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { ProjectFormModal } from '../components/ui/ProjectFormModal';
 import { StatusIndicator } from '../components/ui/StatusIndicator';
+import { PdfAnalysisReview } from '../components/project/PdfAnalysisReview';
+import { ContentDistributionPanel } from '../components/project/ContentDistributionPanel';
+import { PresentationGeneratorPanel } from '../components/project/PresentationGeneratorPanel';
+import { IndividualPreparationPanel } from '../components/project/IndividualPreparationPanel';
+import { GmailDispatchPanel } from '../components/project/GmailDispatchPanel';
+import { RehearsalFormModal } from '../components/ui/RehearsalFormModal';
+import {
+  MemberPreparationMaterial,
+  PreparationReviewStatus,
+} from '../types/preparation';
+import {
+  CreateCalendarRehearsalInput,
+  EmailDispatchLog,
+} from '../types/workspace';
 
 interface ProjectDetailViewProps {
   project: Project;
-  members: TeamMember[];
+  allProjects: Project[];
+  allMembers: MemberDirectoryItem[];
+  assignments: TeamMemberAssignmentView[];
   rehearsals: RehearsalSession[];
+  isMutating: boolean;
   onBackToProjects: () => void;
+  onUpdateProject: (id: string, payload: CreateProjectInput) => Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<void>;
+  onSetPresentationDate: (
+    projectId: string,
+    date: string,
+    time: string,
+    location: string
+  ) => Promise<void>;
+  onAssociateMember: (input: AssociateMemberInput) => Promise<void>;
+  onUpdateAssociation: (input: UpdateAssociationInput) => Promise<void>;
+  onRemoveAssociation: (associationId: string) => Promise<void>;
+  onAnalyzePdf: (projectId: string, file: File) => Promise<void>;
+  onAutoDistribute: (projectId: string) => Promise<void>;
+  onReassignSection: (
+    projectId: string,
+    sectionId: string,
+    memberId: string
+  ) => Promise<void>;
+  onGenerateGoogleSlides: (params: {
+    projectId: string;
+    approvedSectionIds: string[];
+    confirmDuplicate: boolean;
+    requestId: string;
+  }) => Promise<void>;
+  preparations: MemberPreparationMaterial[];
+  onGenerateMemberPreparation: (
+    projectId: string,
+    memberId: string
+  ) => Promise<void>;
+  onUpdateMemberPreparation: (
+    material: MemberPreparationMaterial
+  ) => Promise<void>;
+  onTogglePreparationSectionReviewed: (
+    preparationId: string,
+    sectionKey: keyof PreparationReviewStatus,
+    reviewed: boolean
+  ) => Promise<void>;
+  onMarkAllPreparationReviewed: (
+    preparationId: string,
+    reviewed: boolean
+  ) => Promise<void>;
+  emailLogs: EmailDispatchLog[];
+  onSendMemberEmail: (params: {
+    projectId: string;
+    memberId: string;
+    memberName: string;
+    recipientEmail: string;
+    subject: string;
+    bodyText: string;
+  }) => Promise<void>;
+  onCreateCalendarRehearsal: (
+    input: CreateCalendarRehearsalInput
+  ) => Promise<void>;
 }
 
 const DETAIL_TABS: Array<{
@@ -43,20 +129,56 @@ const DETAIL_TABS: Array<{
   { id: 'pdf', label: 'Documento PDF' },
   { id: 'content', label: 'Divisão de conteúdo' },
   { id: 'presentation', label: 'Apresentação' },
+  { id: 'preparation', label: 'Preparação individual' },
+  { id: 'communication', label: 'E-mails (Gmail)' },
   { id: 'rehearsals', label: 'Cronograma de ensaios' },
   { id: 'progress', label: 'Painel de progresso' },
 ];
 
 export function ProjectDetailView({
   project,
-  members,
+  allProjects,
+  allMembers,
+  assignments,
   rehearsals,
+  isMutating,
   onBackToProjects,
+  onUpdateProject,
+  onDeleteProject,
+  onSetPresentationDate,
+  onAssociateMember,
+  onUpdateAssociation,
+  onRemoveAssociation,
+  onAnalyzePdf,
+  onAutoDistribute,
+  onReassignSection,
+  onGenerateGoogleSlides,
+  preparations,
+  onGenerateMemberPreparation,
+  onUpdateMemberPreparation,
+  onTogglePreparationSectionReviewed,
+  onMarkAllPreparationReviewed,
+  emailLogs,
+  onSendMemberEmail,
+  onCreateCalendarRehearsal,
 }: ProjectDetailViewProps) {
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>('overview');
-  const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
+  const [selectedPrepMemberId, setSelectedPrepMemberId] = useState<
+    string | null
+  >(null);
 
-  const projectMembers = members.filter((m) => m.projectId === project.id);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
+  const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
+  const [isRehearsalModalOpen, setIsRehearsalModalOpen] = useState(false);
+
+  const [isAssociateOpen, setIsAssociateOpen] = useState(false);
+  const [editingAssociation, setEditingAssociation] =
+    useState<TeamMemberAssignmentView | null>(null);
+  const [removingAssociation, setRemovingAssociation] =
+    useState<TeamMemberAssignmentView | null>(null);
+
+  const projectMembers = assignments.filter((m) => m.projectId === project.id);
   const projectRehearsals = rehearsals.filter((r) => r.projectId === project.id);
 
   const allocatedMinutes = projectMembers.reduce(
@@ -64,12 +186,24 @@ export function ProjectDetailView({
     0
   );
 
-  const activeSlide =
-    project.slides[selectedSlideIndex] ?? project.slides[0] ?? null;
+  const availableMembersToAssociate = allMembers.filter(
+    (mem) => !projectMembers.some((pm) => pm.memberId === mem.id)
+  );
+
+  const handleDeleteProjectConfirm = async () => {
+    await onDeleteProject(project.id);
+    setIsDeleteProjectOpen(false);
+    onBackToProjects();
+  };
+
+  const handleRemoveAssociationConfirm = async () => {
+    if (!removingAssociation) return;
+    await onRemoveAssociation(removingAssociation.associationId);
+    setRemovingAssociation(null);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho contextual do projeto */}
       <Card padding="md">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
           <div className="space-y-2 min-w-0">
@@ -98,15 +232,43 @@ export function ProjectDetailView({
             </div>
           </div>
 
-          <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between gap-3 shrink-0">
-            <StatusIndicator status={project.status} />
-            <div className="w-40">
-              <ProgressBar value={project.overallProgress} size="sm" />
+          <div className="flex flex-col items-start lg:items-end gap-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDateModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <CalendarClock className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Definir data</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditProjectOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Editar projeto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDeleteProjectOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-white hover:bg-red-50 border border-red-200 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Excluir</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <StatusIndicator status={project.status} />
+              <div className="w-36">
+                <ProgressBar value={project.overallProgress} size="sm" />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Navegação interna das 7 seções do projeto */}
         <div
           className="mt-6 pt-4 border-t border-slate-200 flex items-center gap-1.5 overflow-x-auto"
           role="tablist"
@@ -134,7 +296,6 @@ export function ProjectDetailView({
         </div>
       </Card>
 
-      {/* 1. Informações gerais */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card padding="md" className="lg:col-span-2 space-y-5">
@@ -157,13 +318,20 @@ export function ProjectDetailView({
                 <p className="font-medium text-slate-900">{project.discipline}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium text-slate-500">Docente responsável</p>
+                <p className="text-xs font-medium text-slate-500">
+                  Docente responsável
+                </p>
                 <p className="font-medium text-slate-900">{project.advisor}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium text-slate-500">Local da apresentação</p>
+                <p className="text-xs font-medium text-slate-500">
+                  Local da apresentação
+                </p>
                 <p className="font-medium text-slate-900 flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-blue-700 shrink-0" aria-hidden="true" />
+                  <MapPin
+                    className="w-4 h-4 text-blue-700 shrink-0"
+                    aria-hidden="true"
+                  />
                   <span>{project.location}</span>
                 </p>
               </div>
@@ -171,7 +339,18 @@ export function ProjectDetailView({
           </Card>
 
           <Card padding="md" className="space-y-4">
-            <CardHeader title="Resumo operacional" />
+            <CardHeader
+              title="Resumo operacional"
+              action={
+                <button
+                  type="button"
+                  onClick={() => setIsDateModalOpen(true)}
+                  className="text-xs font-medium text-blue-700 hover:underline"
+                >
+                  Alterar data
+                </button>
+              }
+            />
             <dl className="divide-y divide-slate-200 text-sm">
               <div className="py-3 flex items-center justify-between gap-3">
                 <dt className="text-slate-500">Data marcada</dt>
@@ -194,7 +373,7 @@ export function ProjectDetailView({
               <div className="py-3 flex items-center justify-between gap-3">
                 <dt className="text-slate-500">Integrantes</dt>
                 <dd className="font-semibold text-slate-900 tabular-nums">
-                  {project.memberCount} participantes
+                  {project.memberCount} participante(s)
                 </dd>
               </div>
               <div className="py-3 flex items-center justify-between gap-3">
@@ -208,25 +387,56 @@ export function ProjectDetailView({
         </div>
       )}
 
-      {/* 2. Integrantes */}
       {activeTab === 'members' && (
         <Card padding="none" className="overflow-hidden">
           <div className="p-5 sm:p-6 border-b border-slate-200">
             <CardHeader
-              title="Integrantes da equipe"
-              subtitle={`${projectMembers.length} participante(s) com atribuições definidas`}
+              title="Integrantes associados"
+              subtitle={`${projectMembers.length} participante(s) vinculado(s) a este projeto`}
+              action={
+                <button
+                  type="button"
+                  disabled={availableMembersToAssociate.length === 0}
+                  onClick={() => {
+                    setEditingAssociation(null);
+                    setIsAssociateOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <UserPlus className="w-4 h-4" aria-hidden="true" />
+                  <span>Associar integrante</span>
+                </button>
+              }
             />
           </div>
 
           {projectMembers.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
-              Nenhum integrante detalhado cadastrado ainda para este projeto.
+            <div className="p-8 text-center space-y-3">
+              <p className="text-sm font-medium text-slate-900">
+                Nenhum integrante associado a este projeto ainda.
+              </p>
+              <p className="text-xs text-slate-500">
+                Associe participantes cadastrados na aba Equipes para definir responsabilidades e tempos de fala.
+              </p>
+              {availableMembersToAssociate.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingAssociation(null);
+                    setIsAssociateOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  <UserPlus className="w-4 h-4" aria-hidden="true" />
+                  <span>Associar integrante</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-slate-200">
               {projectMembers.map((member) => (
                 <div
-                  key={member.id}
+                  key={member.associationId}
                   className="p-5 sm:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="flex items-start gap-3.5 min-w-0">
@@ -246,16 +456,51 @@ export function ProjectDetailView({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between md:justify-end gap-6 shrink-0">
+                  <div className="flex flex-wrap items-center justify-between md:justify-end gap-5 shrink-0">
                     <div className="text-right tabular-nums">
                       <p className="text-xs text-slate-500">Tempo de fala</p>
                       <p className="text-sm font-semibold text-slate-900">
                         {member.presentationMinutes} min
                       </p>
                     </div>
-                    <div className="w-36">
+                    <div className="w-32">
                       <ProgressBar value={member.progress} size="sm" />
                     </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPrepMemberId(member.memberId);
+                          setActiveTab('preparation');
+                        }}
+                        title="Abrir preparação individual"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors mr-1 whitespace-nowrap"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Preparar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAssociation(member);
+                          setIsAssociateOpen(true);
+                        }}
+                        title="Editar participação"
+                        aria-label={`Editar participação de ${member.name}`}
+                        className="p-2 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemovingAssociation(member)}
+                        title="Remover do projeto"
+                        aria-label={`Remover ${member.name} do projeto`}
+                        className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -264,302 +509,116 @@ export function ProjectDetailView({
         </Card>
       )}
 
-      {/* 3. Documento PDF */}
       {activeTab === 'pdf' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card padding="md" className="lg:col-span-2 space-y-5">
-            <CardHeader
-              title="Documento PDF de referência"
-              subtitle="Arquivo principal utilizado para estruturar o seminário"
-            />
-
-            {project.pdfDocument ? (
-              <div className="space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5" aria-hidden="true" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">
-                        {project.pdfDocument.fileName}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
-                        {project.pdfDocument.fileSize} · {project.pdfDocument.pageCount}{' '}
-                        páginas · Enviado em{' '}
-                        {formatDatePtBr(project.pdfDocument.uploadedAt)} por{' '}
-                        {project.pdfDocument.uploadedBy}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Síntese do conteúdo
-                  </h3>
-                  <p className="text-sm text-slate-600 leading-relaxed">
-                    {project.pdfDocument.summary}
-                  </p>
-                </div>
-
-                <div className="space-y-2.5 pt-4 border-t border-slate-200">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Tópicos mapeados do arquivo
-                  </h3>
-                  <ul className="space-y-2">
-                    {project.pdfDocument.extractedTopics.map((topic, index) => (
-                      <li
-                        key={topic}
-                        className="flex items-start gap-2.5 text-sm text-slate-700"
-                      >
-                        <span className="text-xs font-semibold text-blue-700 tabular-nums mt-0.5">
-                          {String(index + 1).padStart(2, '0')}.
-                        </span>
-                        <span>{topic}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 border border-dashed border-slate-300 rounded-lg text-center space-y-2">
-                <FileText
-                  className="w-8 h-8 text-slate-400 mx-auto"
-                  aria-hidden="true"
-                />
-                <p className="text-sm font-semibold text-slate-900">
-                  Nenhum documento PDF anexado ainda
-                </p>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Selecione o artigo, relatório ou roteiro em PDF do trabalho para centralizar a leitura do grupo.
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Card padding="md" className="space-y-4">
-            <CardHeader
-              title="Envio de documento"
-              subtitle="Substituir ou adicionar arquivo PDF"
-            />
-            <div className="p-6 border border-dashed border-blue-200 bg-blue-50/40 rounded-lg text-center space-y-3">
-              <Upload
-                className="w-6 h-6 text-blue-700 mx-auto"
-                aria-hidden="true"
-              />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-slate-900">
-                  Selecione um arquivo PDF
-                </p>
-                <p className="text-xs text-slate-500">
-                  Tamanho máximo recomendado: 25 MB
-                </p>
-              </div>
-              <label className="inline-flex items-center justify-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors">
-                <span>Escolher arquivo</span>
-                <input type="file" accept="application/pdf" className="sr-only" />
-              </label>
-            </div>
-          </Card>
-        </div>
+        <PdfAnalysisReview
+          projectId={project.id}
+          pdfDocument={project.pdfDocument}
+          onAnalyzePdf={onAnalyzePdf}
+        />
       )}
 
-      {/* 4. Divisão de conteúdo */}
       {activeTab === 'content' && (
-        <Card padding="none" className="overflow-hidden">
-          <div className="p-5 sm:p-6 border-b border-slate-200">
-            <CardHeader
-              title="Divisão de conteúdo"
-              subtitle="Ordem de tópicos distribuída entre os integrantes do grupo"
-            />
-          </div>
-
-          {project.contentDivision.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
-              Nenhuma seção de conteúdo foi dividida neste projeto ainda.
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-200">
-              {project.contentDivision.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-xs font-semibold text-blue-700 tabular-nums">
-                        Parte {String(item.order).padStart(2, '0')}
-                      </span>
-                      <h3 className="text-base font-semibold text-slate-900">
-                        {item.topicTitle}
-                      </h3>
-                    </div>
-                    <p className="text-sm text-slate-600">{item.keyPoints}</p>
-                    <p className="text-xs text-slate-500">
-                      Responsável:{' '}
-                      <span className="font-medium text-slate-800">
-                        {item.assignedMemberName}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-5 shrink-0">
-                    <span className="text-xs font-semibold text-slate-700 tabular-nums whitespace-nowrap">
-                      {item.estimatedMinutes} min
-                    </span>
-                    <StatusIndicator status={item.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+        <ContentDistributionPanel
+          project={project}
+          projectMembers={projectMembers}
+          isMutating={isMutating}
+          onAutoDistribute={onAutoDistribute}
+          onReassignSection={onReassignSection}
+        />
       )}
 
-      {/* 5. Apresentação */}
       {activeTab === 'presentation' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <Card padding="none" className="overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-200">
-              <CardHeader
-                title="Roteiro de slides"
-                subtitle={`${project.slides.length} slide(s) estruturado(s)`}
-              />
-            </div>
-
-            {project.slides.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500">
-                Nenhum slide estruturado ainda.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-200">
-                {project.slides.map((slide, index) => {
-                  const selected = index === selectedSlideIndex;
-                  return (
-                    <button
-                      key={slide.id}
-                      type="button"
-                      onClick={() => setSelectedSlideIndex(index)}
-                      className={`w-full text-left px-5 py-3.5 transition-colors flex items-start justify-between gap-3 ${
-                        selected ? 'bg-blue-50' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <p
-                          className={`text-xs font-semibold tabular-nums ${
-                            selected ? 'text-blue-700' : 'text-slate-500'
-                          }`}
-                        >
-                          Slide {String(slide.slideNumber).padStart(2, '0')}
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900 truncate">
-                          {slide.title}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {slide.assignedMemberName}
-                        </p>
-                      </div>
-                      <span className="text-xs font-medium text-slate-600 tabular-nums shrink-0">
-                        {slide.durationMinutes} min
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          <Card padding="lg" className="lg:col-span-2">
-            {activeSlide ? (
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-blue-700">
-                    <Presentation className="w-4 h-4" aria-hidden="true" />
-                    <span className="tabular-nums">
-                      Slide {activeSlide.slideNumber} de {project.slides.length}
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-500 tabular-nums">
-                    Apresentador: {activeSlide.assignedMemberName} ·{' '}
-                    {activeSlide.durationMinutes} min
-                  </span>
-                </div>
-
-                {/* Pré-visualização limpa do slide */}
-                <div className="p-6 sm:p-8 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
-                  <div className="space-y-1">
-                    <h3 className="text-xl sm:text-2xl font-bold text-slate-900">
-                      {activeSlide.title}
-                    </h3>
-                    <p className="text-sm text-blue-700 font-medium">
-                      {activeSlide.subtitle}
-                    </p>
-                  </div>
-
-                  <ul className="space-y-2.5 pt-2">
-                    {activeSlide.bulletPoints.map((point) => (
-                      <li
-                        key={point}
-                        className="flex items-start gap-2.5 text-sm sm:text-base text-slate-700"
-                      >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full bg-blue-700 mt-2 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />
-                    <span>Notas do apresentador</span>
-                  </p>
-                  <p className="text-sm text-slate-600 leading-relaxed">
-                    {activeSlide.speakerNotes}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="py-12 text-center text-sm text-slate-500">
-                Selecione ou estruture os slides deste projeto para pré-visualização.
-              </div>
-            )}
-          </Card>
-        </div>
+        <PresentationGeneratorPanel
+          project={project}
+          projectMembers={projectMembers}
+          isMutating={isMutating}
+          onGenerateGoogleSlides={onGenerateGoogleSlides}
+        />
       )}
 
-      {/* 6. Cronograma de ensaios */}
+      {activeTab === 'preparation' && (
+        <IndividualPreparationPanel
+          project={project}
+          projectMembers={projectMembers}
+          preparations={preparations}
+          initialSelectedMemberId={selectedPrepMemberId}
+          isMutating={isMutating}
+          onGeneratePreparation={onGenerateMemberPreparation}
+          onUpdatePreparation={onUpdateMemberPreparation}
+          onToggleSectionReviewed={onTogglePreparationSectionReviewed}
+          onMarkAllReviewed={onMarkAllPreparationReviewed}
+        />
+      )}
+
+      {activeTab === 'communication' && (
+        <GmailDispatchPanel
+          project={project}
+          projectMembers={projectMembers}
+          preparations={preparations}
+          emailLogs={emailLogs}
+          isMutating={isMutating}
+          onSendMemberEmail={onSendMemberEmail}
+        />
+      )}
+
       {activeTab === 'rehearsals' && (
         <Card padding="none" className="overflow-hidden">
           <div className="p-5 sm:p-6 border-b border-slate-200">
             <CardHeader
               title="Cronograma de ensaios"
-              subtitle="Encontros planejados para ajuste de ritmo, transições e cronometragem"
+              subtitle="Encontros planejados no Google Calendar com convites e lembretes para a equipe"
+              action={
+                <button
+                  type="button"
+                  onClick={() => setIsRehearsalModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <CalendarPlus className="w-4 h-4" aria-hidden="true" />
+                  <span>Agendar ensaio no Google Calendar</span>
+                </button>
+              }
             />
           </div>
 
           {projectRehearsals.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">
-              Nenhum ensaio agendado para este projeto até o momento.
+            <div className="p-8 text-center space-y-3">
+              <p className="text-sm font-medium text-slate-900">
+                Nenhum ensaio agendado para este projeto até o momento.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsRehearsalModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                <CalendarPlus className="w-4 h-4" aria-hidden="true" />
+                <span>Criar ensaio no Google Calendar</span>
+              </button>
             </div>
           ) : (
             <div className="divide-y divide-slate-200">
               {projectRehearsals.map((session) => (
                 <div
                   key={session.id}
-                  className="p-5 sm:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="p-5 sm:px-6 flex flex-col lg:flex-row lg:items-start justify-between gap-4"
                 >
-                  <div className="space-y-1.5 min-w-0">
-                    <h3 className="text-base font-semibold text-slate-900">
-                      {session.title}
-                    </h3>
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="text-base font-semibold text-slate-900">
+                        {session.title}
+                      </h3>
+                      {session.googleCalendarEventId && (
+                        <span className="text-xs font-medium text-blue-700">
+                          · Sincronizado com Google Calendar
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 tabular-nums">
                       <span className="inline-flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                        <Calendar
+                          className="w-3.5 h-3.5 text-slate-400"
+                          aria-hidden="true"
+                        />
                         {formatDatePtBr(session.date)} às {session.time}
                       </span>
                       <span aria-hidden="true">·</span>
@@ -569,10 +628,82 @@ export function ProjectDetailView({
                       <span aria-hidden="true">·</span>
                       <span>{session.durationMinutes} min previstos</span>
                     </div>
-                    <p className="text-sm text-slate-600">{session.notes}</p>
+
+                    {session.notes && (
+                      <p className="text-sm text-slate-600">{session.notes}</p>
+                    )}
+
+                    {(session.attendeeEmails?.length ||
+                      session.reminders?.length ||
+                      session.googleCalendarEventId) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs text-slate-500">
+                        {session.attendeeEmails &&
+                          session.attendeeEmails.length > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                              <Mail className="w-3.5 h-3.5 text-slate-400" />
+                              <span>
+                                {session.attendeeEmails.length} convidado(s)
+                              </span>
+                            </span>
+                          )}
+
+                        {session.reminders && session.reminders.length > 0 && (
+                          <span className="inline-flex items-center gap-1">
+                            <Bell className="w-3.5 h-3.5 text-slate-400" />
+                            <span>
+                              {session.reminders
+                                .map(
+                                  (r) =>
+                                    `${
+                                      r.method === 'email' ? 'E-mail' : 'Popup'
+                                    } ${r.minutes}min`
+                                )
+                                .join(', ')}
+                            </span>
+                          </span>
+                        )}
+
+                        {session.googleCalendarEventId && (
+                          <span>
+                            ID Evento:{' '}
+                            <code className="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {session.googleCalendarEventId}
+                            </code>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="shrink-0">
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    {sanitizeExternalHttpUrl(
+                      session.googleMeetLink || session.meetingLink
+                    ) && (
+                      <a
+                        href={sanitizeExternalHttpUrl(
+                          session.googleMeetLink || session.meetingLink
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                        <span>Entrar na sala</span>
+                      </a>
+                    )}
+                    {sanitizeExternalHttpUrl(session.googleCalendarHtmlLink) && (
+                      <a
+                        href={sanitizeExternalHttpUrl(
+                          session.googleCalendarHtmlLink
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        <span>Google Calendar</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
                     <StatusIndicator status={session.status} />
                   </div>
                 </div>
@@ -582,17 +713,22 @@ export function ProjectDetailView({
         </Card>
       )}
 
-      {/* 7. Painel de progresso */}
       {activeTab === 'progress' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card padding="md">
-              <p className="text-xs font-medium text-slate-500">Progresso geral</p>
+              <p className="text-xs font-medium text-slate-500">
+                Progresso geral
+              </p>
               <p className="mt-2 text-2xl font-semibold text-slate-900 tabular-nums">
                 {project.overallProgress}%
               </p>
               <div className="mt-3">
-                <ProgressBar value={project.overallProgress} showLabel={false} size="sm" />
+                <ProgressBar
+                  value={project.overallProgress}
+                  showLabel={false}
+                  size="sm"
+                />
               </div>
             </Card>
 
@@ -637,13 +773,13 @@ export function ProjectDetailView({
 
             {projectMembers.length === 0 ? (
               <div className="p-8 text-center text-sm text-slate-500">
-                Sem dados individuais vinculados a este projeto.
+                Sem integrantes associados a este projeto.
               </div>
             ) : (
               <div className="divide-y divide-slate-200">
                 {projectMembers.map((member) => (
                   <div
-                    key={member.id}
+                    key={member.associationId}
                     className="p-5 sm:px-6 grid grid-cols-1 md:grid-cols-12 gap-4 items-center"
                   >
                     <div className="md:col-span-5 flex items-center gap-3 min-w-0">
@@ -663,11 +799,17 @@ export function ProjectDetailView({
 
                     <div className="md:col-span-3 flex items-center gap-4 text-xs text-slate-600 tabular-nums">
                       <span className="inline-flex items-center gap-1">
-                        <ListChecks className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                        <ListChecks
+                          className="w-3.5 h-3.5 text-slate-400"
+                          aria-hidden="true"
+                        />
                         {member.tasksCompleted}/{member.tasksTotal} tarefas
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                        <Clock
+                          className="w-3.5 h-3.5 text-slate-400"
+                          aria-hidden="true"
+                        />
                         {member.presentationMinutes} min
                       </span>
                     </div>
@@ -690,6 +832,75 @@ export function ProjectDetailView({
           </Card>
         </div>
       )}
+
+      <ProjectFormModal
+        isOpen={isEditProjectOpen}
+        editingProject={project}
+        isSubmitting={isMutating}
+        onSubmit={async (values) => {
+          await onUpdateProject(project.id, values);
+        }}
+        onClose={() => setIsEditProjectOpen(false)}
+      />
+
+      <PresentationDateModal
+        isOpen={isDateModalOpen}
+        project={project}
+        isSubmitting={isMutating}
+        onSubmit={onSetPresentationDate}
+        onClose={() => setIsDateModalOpen(false)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={isDeleteProjectOpen}
+        title="Excluir projeto"
+        description={`Tem certeza de que deseja excluir o projeto "${project.title}"? Todos os vínculos de integrantes e ensaios deste projeto serão removidos.`}
+        confirmLabel="Excluir projeto"
+        isSubmitting={isMutating}
+        onConfirm={handleDeleteProjectConfirm}
+        onClose={() => setIsDeleteProjectOpen(false)}
+      />
+
+      <AssociateMemberModal
+        isOpen={isAssociateOpen}
+        projects={allProjects}
+        members={
+          editingAssociation ? allMembers : availableMembersToAssociate
+        }
+        lockedProjectId={project.id}
+        editingAssignment={editingAssociation}
+        isSubmitting={isMutating}
+        onAssociate={onAssociateMember}
+        onUpdateAssociation={onUpdateAssociation}
+        onClose={() => {
+          setEditingAssociation(null);
+          setIsAssociateOpen(false);
+        }}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(removingAssociation)}
+        title="Remover integrante do projeto"
+        description={
+          removingAssociation
+            ? `Deseja desassociar "${removingAssociation.name}" do projeto "${project.title}"? O cadastro do integrante continuará disponível na aba Equipes.`
+            : ''
+        }
+        confirmLabel="Remover do projeto"
+        isSubmitting={isMutating}
+        onConfirm={handleRemoveAssociationConfirm}
+        onClose={() => setRemovingAssociation(null)}
+      />
+
+      <RehearsalFormModal
+        isOpen={isRehearsalModalOpen}
+        projects={allProjects}
+        assignments={assignments}
+        lockedProjectId={project.id}
+        isSubmitting={isMutating}
+        onCreateCalendarRehearsal={onCreateCalendarRehearsal}
+        onClose={() => setIsRehearsalModalOpen(false)}
+      />
     </div>
   );
 }

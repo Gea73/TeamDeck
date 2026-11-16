@@ -1,0 +1,19 @@
+-- Rollback da Migration 002
+
+DROP INDEX IF EXISTS idx_email_dispatch_logs_member_id;
+DROP INDEX IF EXISTS idx_email_dispatch_logs_project_id;
+DROP INDEX IF EXISTS idx_rehearsals_project_date;
+DROP INDEX IF EXISTS idx_member_preparations_member_id;
+DROP INDEX IF EXISTS idx_member_preparations_project_id;
+DROP INDEX IF EXISTS idx_presentation_slides_google_pres_id;
+DROP INDEX IF EXISTS idx_presentation_slides_project_slide_number;
+DROP INDEX IF EXISTS idx_project_sections_assigned_member_id;
+DROP INDEX IF EXISTS idx_project_sections_pdf_document_id;
+DROP INDEX IF EXISTS idx_project_sections_project_sort;
+DROP INDEX IF EXISTS idx_project_members_member_id;
+DROP INDEX IF EXISTS idx_project_members_project_id;
+DROP INDEX IF EXISTS idx_members_user_id;
+DROP INDEX IF EXISTS idx_projects_presentation_date;
+DROP INDEX IF EXISTS idx_projects_creator_user_id;
+DROP INDEX IF EXISTS idx_members_email_lower;
+DROP INDEX IF EXISTS idx_users_email_lower;

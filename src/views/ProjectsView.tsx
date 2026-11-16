@@ -1,16 +1,36 @@
-import React, { useState } from 'react';
-import { Calendar, ChevronRight, Plus, Search, Users } from 'lucide-react';
-import { CreateProjectPayload, Project, ProjectStatus } from '../types';
+import { useState } from 'react';
+import {
+  Calendar,
+  CalendarClock,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+} from 'lucide-react';
+import { CreateProjectInput, Project, ProjectStatus } from '../types';
 import { formatDatePtBr } from '../utils/formatters';
 import { Card } from '../components/ui/Card';
-import { Modal } from '../components/ui/Modal';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
+import { PresentationDateModal } from '../components/ui/PresentationDateModal';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { ProjectFormModal } from '../components/ui/ProjectFormModal';
 import { StatusIndicator } from '../components/ui/StatusIndicator';
 
 interface ProjectsViewProps {
   projects: Project[];
+  isMutating: boolean;
   onOpenProject: (projectId: string) => void;
-  onCreateProject: (payload: CreateProjectPayload) => void;
+  onCreateProject: (payload: CreateProjectInput) => Promise<void>;
+  onUpdateProject: (id: string, payload: CreateProjectInput) => Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<void>;
+  onSetPresentationDate: (
+    projectId: string,
+    date: string,
+    time: string,
+    location: string
+  ) => Promise<void>;
   isCreateModalOpen: boolean;
   onOpenCreateModal: () => void;
   onCloseCreateModal: () => void;
@@ -26,21 +46,26 @@ const STATUS_FILTERS: Array<'Todos' | ProjectStatus> = [
 
 export function ProjectsView({
   projects,
+  isMutating,
   onOpenProject,
   onCreateProject,
+  onUpdateProject,
+  onDeleteProject,
+  onSetPresentationDate,
   isCreateModalOpen,
   onOpenCreateModal,
   onCloseCreateModal,
 }: ProjectsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'Todos' | ProjectStatus>('Todos');
+  const [statusFilter, setStatusFilter] = useState<'Todos' | ProjectStatus>(
+    'Todos'
+  );
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [presentationDate, setPresentationDate] = useState('2026-12-05');
-  const [memberCount, setMemberCount] = useState(4);
-  const [status, setStatus] = useState<ProjectStatus>(ProjectStatus.PLANNING);
-  const [discipline, setDiscipline] = useState('');
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [schedulingProject, setSchedulingProject] = useState<Project | null>(
+    null
+  );
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
 
   const filteredProjects = projects.filter((project) => {
     const matchesStatus =
@@ -54,33 +79,25 @@ export function ProjectsView({
     return matchesStatus && matchesQuery;
   });
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!title.trim() || !description.trim() || !presentationDate) {
-      return;
+  const handleProjectFormSubmit = async (
+    values: CreateProjectInput,
+    editingId?: string
+  ) => {
+    if (editingId) {
+      await onUpdateProject(editingId, values);
+    } else {
+      await onCreateProject(values);
     }
+  };
 
-    onCreateProject({
-      title,
-      description,
-      presentationDate,
-      memberCount: Math.max(1, Number(memberCount) || 1),
-      status,
-      discipline,
-    });
-
-    setTitle('');
-    setDescription('');
-    setPresentationDate('2026-12-05');
-    setMemberCount(4);
-    setStatus(ProjectStatus.PLANNING);
-    setDiscipline('');
-    onCloseCreateModal();
+  const handleConfirmDelete = async () => {
+    if (!deletingProject) return;
+    await onDeleteProject(deletingProject.id);
+    setDeletingProject(null);
   };
 
   return (
     <div className="space-y-6">
-      {/* Barra de busca, filtros e ação principal */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-sm">
@@ -126,7 +143,10 @@ export function ProjectsView({
 
         <button
           type="button"
-          onClick={onOpenCreateModal}
+          onClick={() => {
+            setEditingProject(null);
+            onOpenCreateModal();
+          }}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
         >
           <Plus className="w-4 h-4" aria-hidden="true" />
@@ -134,7 +154,6 @@ export function ProjectsView({
         </button>
       </div>
 
-      {/* Lista de projetos */}
       {filteredProjects.length === 0 ? (
         <Card padding="lg" className="text-center">
           <p className="text-base font-semibold text-slate-900">
@@ -145,7 +164,10 @@ export function ProjectsView({
           </p>
           <button
             type="button"
-            onClick={onOpenCreateModal}
+            onClick={() => {
+              setEditingProject(null);
+              onOpenCreateModal();
+            }}
             className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
@@ -190,22 +212,54 @@ export function ProjectsView({
                   <div className="flex items-center gap-4 text-xs text-slate-600 tabular-nums">
                     <span className="inline-flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                      <span>{formatDatePtBr(project.presentationDate)}</span>
+                      <span>
+                        {formatDatePtBr(project.presentationDate)} ·{' '}
+                        {project.presentationTime}
+                      </span>
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                      <span>{project.memberCount} integrantes</span>
+                      <span>{project.memberCount} integrante(s)</span>
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onOpenProject(project.id)}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap shrink-0 transition-colors"
-                  >
-                    <span>Abrir projeto</span>
-                    <ChevronRight className="w-4 h-4" aria-hidden="true" />
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSchedulingProject(project)}
+                      title="Definir data da apresentação"
+                      aria-label={`Definir data da apresentação de ${project.title}`}
+                      className="p-2 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <CalendarClock className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingProject(project)}
+                      title="Editar projeto"
+                      aria-label={`Editar projeto ${project.title}`}
+                      className="p-2 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingProject(project)}
+                      title="Excluir projeto"
+                      aria-label={`Excluir projeto ${project.title}`}
+                      className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenProject(project.id)}
+                      className="inline-flex items-center gap-1 pl-2 text-sm font-medium text-blue-700 hover:text-blue-800 whitespace-nowrap transition-colors"
+                    >
+                      <span>Abrir</span>
+                      <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -213,143 +267,38 @@ export function ProjectsView({
         </div>
       )}
 
-      {/* Modal Criar Novo Projeto */}
-      <Modal
-        isOpen={isCreateModalOpen}
-        onClose={onCloseCreateModal}
-        title="Criar novo projeto"
-        subtitle="Cadastre os dados iniciais da apresentação em grupo"
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="project-title"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Nome do projeto
-            </label>
-            <input
-              id="project-title"
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex: Seminário sobre Bancos de Dados NoSQL"
-              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-            />
-          </div>
+      <ProjectFormModal
+        isOpen={isCreateModalOpen || Boolean(editingProject)}
+        editingProject={editingProject}
+        isSubmitting={isMutating}
+        onSubmit={handleProjectFormSubmit}
+        onClose={() => {
+          setEditingProject(null);
+          onCloseCreateModal();
+        }}
+      />
 
-          <div>
-            <label
-              htmlFor="project-discipline"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Disciplina (opcional)
-            </label>
-            <input
-              id="project-discipline"
-              type="text"
-              value={discipline}
-              onChange={(e) => setDiscipline(e.target.value)}
-              placeholder="Ex: SIN3012 — Engenharia de Software"
-              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-            />
-          </div>
+      <PresentationDateModal
+        isOpen={Boolean(schedulingProject)}
+        project={schedulingProject}
+        isSubmitting={isMutating}
+        onSubmit={onSetPresentationDate}
+        onClose={() => setSchedulingProject(null)}
+      />
 
-          <div>
-            <label
-              htmlFor="project-description"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Descrição
-            </label>
-            <textarea
-              id="project-description"
-              rows={3}
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Resumo dos objetivos, tema central e formato da apresentação..."
-              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label
-                htmlFor="project-date"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Data da apresentação
-              </label>
-              <input
-                id="project-date"
-                type="date"
-                required
-                value={presentationDate}
-                onChange={(e) => setPresentationDate(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 tabular-nums focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="project-members"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Integrantes
-              </label>
-              <input
-                id="project-members"
-                type="number"
-                min={1}
-                max={20}
-                required
-                value={memberCount}
-                onChange={(e) => setMemberCount(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 tabular-nums focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="project-status"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Status
-              </label>
-              <select
-                id="project-status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700"
-              >
-                {Object.values(ProjectStatus).map((statusOption) => (
-                  <option key={statusOption} value={statusOption}>
-                    {statusOption}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onCloseCreateModal}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              Salvar projeto
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <ConfirmDeleteModal
+        isOpen={Boolean(deletingProject)}
+        title="Excluir projeto"
+        description={
+          deletingProject
+            ? `Tem certeza de que deseja excluir o projeto "${deletingProject.title}"? Os vínculos de integrantes e ensaios deste projeto também serão removidos.`
+            : ''
+        }
+        confirmLabel="Excluir projeto"
+        isSubmitting={isMutating}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setDeletingProject(null)}
+      />
     </div>
   );
 }
